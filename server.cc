@@ -1,166 +1,102 @@
+#include "http.h"
+#include "net.h"
+
+#include <chrono>
+#include <fstream>
 #include <iostream>
+#include <iterator>
 #include <map>
 #include <mutex>
-#include <regex>
 #include <sstream>
+#include <streambuf>
 #include <string>
 #include <thread>
 
-#include "net.h"
-
-const std::regex kRequestLinePattern{
-    R"(^(GET|POST)\s+)"
-    //  1
-    R"(((([^:/?#]+):)?(//([^/?#]*))?([^?#]*)(\?([^#]*))?(#(.*))?)\s+)"
-    // 234            5  6          7       8  9       10 11
-    R"(HTTP/([0-9]+).([0-9]+))"};
-    //     12       13
-
-
-std::mutex mutex;
-std::map<std::string, int> counters;
-
-struct Uri {
-  std::string path;
-  std::string query;
+struct Message {
+  std::string sender_name;
+  std::chrono::system_clock::time_point timestamp;
+  std::string message;
 };
 
-struct HttpVersion {
-  int major;
-  int minor;
+struct MessageNode {
+  Message message;
+  std::shared_ptr<MessageNode> next;
 };
 
-struct Request {
-  enum class HttpType {
-    kGet,
-    kPost,
-  };
-
-  HttpType type;
-  HttpVersion http_version;
-  Uri uri;
-  std::map<std::string, std::string> headers;
-  std::string body;
-};
-
-struct Response {
-  enum class HttpStatus {
-    kOk = 200,
-    kNotFound = 404,
-    kLolDicks = 500,
-  };
-
-  HttpStatus status;
-  std::map<std::string, std::string> headers;
-  std::string body;
-};
-
-std::ostream& operator<<(std::ostream& output, const Response& response) {
-  output << "HTTP/1.1 " << static_cast<int>(response.status)
-         << " gigglepigs\r\n";
-
-  for (auto&& [key, value] : response.headers) {
-    if (key != "Content-Length") {
-      output << key << ": " << value << "\r\n";
+class Server {
+ public:
+  void Run(const char* address, const char* service) {
+    tcp::Acceptor acceptor = tcp::Bind(address, service);
+    while(true) {
+      tcp::Stream stream = acceptor.Accept();
+      std::thread(&Server::HandleConnection, this, std::move(stream)).detach();
     }
   }
 
-  output << "Content-Length: " << response.body.length() << "\r\n\r\n"
-         << response.body;
+ private:
+  void HandleConnection(tcp::Stream stream) {
+    std::string input_string;
+    while (true) {
+      std::string read = stream.Read(1);
 
-  return output;
-}
+      if (read.empty()) {
+        return;
+      }
 
-std::istream& operator>>(std::istream& input, Request& request) {
-  std::string request_line;
-  std::getline(input, request_line, '\r');
+      input_string += read;
 
-  std::cout << request_line << "\n";
+      if (input_string.length() >= 4 &&
+          input_string.substr(input_string.length() - 4) == "\r\n\r\n") {
+        break;
+      }
+    }
 
-  std::smatch match;
-  if (!std::regex_match(request_line, match, kRequestLinePattern)) {
-    input.setstate(std::ios::failbit);
-    return input;
-  }
-
-  std::string request_type = match[1];
-  if (request_type == "GET") {
-    request.type = Request::HttpType::kGet;
-  } else if (request_type == "POST") {
-    request.type = Request::HttpType::kPost;
-  } else {
-    input.setstate(std::ios::failbit);
-    return input;
-  }
-
-  if (!match[3].str().empty() && match[4] != "http") {
-    input.setstate(std::ios::failbit);
-    return input;
-  }
-
-  request.uri.path = match[7];
-  request.uri.query = match[9];
-
-  request.http_version.major = std::stoi(match[12]);
-  request.http_version.minor = std::stoi(match[13]);
-
-  return input;
-}
-
-void HandleConnection(tcp::Stream stream) {
-  std::string input_string;
-  while (true) {
-    std::string read = stream.Read(1);
-
-    if (read.empty()) {
+    std::istringstream input{input_string};
+    Request request;
+    input >> request;
+    if (input.fail()) {
+      std::cout << "input was not so great\n";
       return;
     }
 
-    input_string += read;
+    std::ostringstream output;
+    output << GenerateResponse(request);
 
-    if (input_string.length() >= 4 &&
-        input_string.substr(input_string.length() - 4) == "\r\n\r\n") {
-      break;
+    std::string to_write = output.str();
+    std::string_view to_write_view = to_write;
+
+    while (to_write_view.length()) {
+      int characters_written = stream.Write(to_write_view);
+      to_write_view.remove_prefix(characters_written);
     }
   }
 
-  std::istringstream input{input_string};
-  Request request;
-  input >> request;
-  if (input.fail()) {
-    std::cout << "input was not so great\n";
-    return;
-  }
+  Response GenerateResponse(const Request& request) {
+    if (request.uri.path == "/") {
+      std::ifstream index{"index.html"};
+      std::string content{std::istreambuf_iterator<char>{index}, {}};
+      return Response{Response::HttpStatus::kOk,
+                      {{"Content-Type", "text/html; charset=utf-8"}},
+                      content};
+    }
 
-  std::unique_lock lock{mutex};
-  Response response{Response::HttpStatus::kOk,
+    std::unique_lock lock{mutex_};
+    return Response{Response::HttpStatus::kOk,
                     {{"Content-Type", "text/plain; charset=utf-8"}},
-                    std::to_string(counters[request.uri.path]++)};
-
-
-  std::ostringstream output;
-
-  output << response;
-
-  std::string to_write = output.str();
-  std::string_view to_write_view = to_write;
-
-  while (to_write_view.length()) {
-    int characters_written = stream.Write(to_write_view);
-    to_write_view.remove_prefix(characters_written);
+                    std::to_string(counters_[request.uri.path]++)};
   }
-}
+
+  std::mutex mutex_;
+  std::map<std::string, int> counters_;
+};
 
 int main(int argc, char* argv[]) {
- if (argc != 3) {
+  if (argc != 3) {
     std::cout << "Usage: ./messenger <host> <port>\n";
     return 1;
   }
 
-  tcp::Acceptor acceptor = tcp::Bind(/*address=*/argv[1], /*service=*/argv[2]);
-  while(true) {
-    tcp::Stream stream = acceptor.Accept();
-    std::thread(HandleConnection, std::move(stream)).detach();
-  }
+  Server server;
+  server.Run(/*address=*/argv[1], /*service=*/argv[2]);
 }
 

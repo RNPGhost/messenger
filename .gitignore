@@ -1,0 +1,4 @@
+.*
+!.gitignore
+/messenger_server
+/messenger_client
