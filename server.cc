@@ -34,6 +34,28 @@ class Server {
   }
 
  private:
+  using Handler = Response (Server::*)(const Request&);
+
+  Response ErrorPage(const Request&, Response::HttpStatus status) {
+    return Response{status,
+                    {{"Content-Type", "text/plain; charset=utf-8"}},
+                    ":("};
+  }
+
+  Response HandleMessage(const Request& request) {
+    return Response{Response::HttpStatus::kOk,
+                    {{"Content-Type", "text/html; charset=utf-8"}},
+                    request.body};
+  }
+
+  Response IndexPage(const Request&) {
+    std::ifstream index{"index.html"};
+    std::string content{std::istreambuf_iterator<char>{index}, {}};
+    return Response{Response::HttpStatus::kOk,
+                    {{"Content-Type", "text/html; charset=utf-8"}},
+                    content};
+  }
+
   void HandleConnection(tcp::Stream stream) {
     std::string input_string;
     while (true) {
@@ -72,22 +94,20 @@ class Server {
   }
 
   Response GenerateResponse(const Request& request) {
-    if (request.uri.path == "/") {
-      std::ifstream index{"index.html"};
-      std::string content{std::istreambuf_iterator<char>{index}, {}};
-      return Response{Response::HttpStatus::kOk,
-                      {{"Content-Type", "text/html; charset=utf-8"}},
-                      content};
+    auto i = path_map_.find(request.uri.path);
+    if (i == path_map_.end()) {
+      return ErrorPage(request, Response::HttpStatus::kNotFound);
+    } else {
+      return (this->*i->second)(request);
     }
-
-    std::unique_lock lock{mutex_};
-    return Response{Response::HttpStatus::kOk,
-                    {{"Content-Type", "text/plain; charset=utf-8"}},
-                    std::to_string(counters_[request.uri.path]++)};
   }
 
   std::mutex mutex_;
   std::map<std::string, int> counters_;
+  std::map<std::string, Handler> path_map_ = {
+      {"/", &Server::IndexPage},
+      {"/message", &Server::HandleMessage}
+  };
 };
 
 int main(int argc, char* argv[]) {
