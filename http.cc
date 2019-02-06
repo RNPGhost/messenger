@@ -12,6 +12,21 @@ const std::regex kRequestLinePattern{
     R"(HTTP/([0-9]+).([0-9]+))"};
     //     12       13
 
+
+std::string Trim(const std::string& input) {
+  constexpr auto not_space = [](char c) {
+    return !std::isspace(c);
+  };
+  auto i = find_if(begin(input), end(input), not_space);
+  auto j = find_if(rbegin(input), rend(input), not_space).base();
+  return std::string{i, j};
+}
+
+std::string ToLower(std::string input) {
+  for (char& c : input) c = std::tolower(c);
+  return input;
+}
+
 }  // namespace
 
 std::ostream& operator<<(std::ostream& output, const Response& response) {
@@ -62,6 +77,22 @@ std::istream& operator>>(std::istream& input, Request& request) {
 
   request.http_version.major = std::stoi(match[12]);
   request.http_version.minor = std::stoi(match[13]);
+
+  std::string header_line;
+  while (std::getline(input, header_line, '\r')) {
+    auto colon_position = header_line.find(':');
+    if (colon_position == std::string::npos) {
+      input.setstate(std::ios::failbit);
+      return input;
+    }
+
+    std::string key = ToLower(Trim(header_line.substr(0, colon_position)));
+    std::string value = Trim(header_line.substr(colon_position + 1));
+
+    request.headers.emplace(key, value);
+  }
+
+  input.clear();
 
   return input;
 }

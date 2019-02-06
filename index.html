@@ -1,15 +1,21 @@
-<!DOCTYPE html>
-<title>Title is not self closing</title>
-<form id="Steven" action="/" method="post">
-  <input type="text" id="message"/>
-  <input type="submit" value="Send"/>
-</form>
-<script>
-  Steven.onsubmit = () => {
-    var query = new XMLHttpRequest();
-    query.open("POST", "/message")
-    query.send(message.value);
-    console.log("Sending message: " + message.value)
-    return false;
-  }
-</script>
+<!doctype html>
+<title>Chat</title>
+<link rel="stylesheet" href="style.css">
+<div id="content">
+  <div class="received" data-sender="Bob" data-timestamp="2019-01-07 22:53">
+    Never gonna give you up
+  </div>
+  <div class="received" data-sender="Bob" data-timestamp="2019-01-07 22:54">
+    never gonna let you down
+  </div>
+  <div class="sent" data-timestamp="2019-01-07 22:54">
+    please stop
+  </div>
+  <div class="received" data-sender="Bob" data-timestamp="2019-01-07 22:53">
+    never gonna run around and desert you
+  </div>
+</div>
+<div id="message" contenteditable>
+  I will <strong><em>burn your house down</em></strong>
+</div>
+<script src="script.js"></script>

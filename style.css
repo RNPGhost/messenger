@@ -1,0 +1,74 @@
+/* Tuning knobs */
+:root {
+  --content-padding: 6px;
+  --message-box-height: 34px;
+  --message-box-padding: 12px;
+}
+
+/* Fix the size of the page as 100% of the available screen height */
+html, body {
+  font: 11pt sans-serif;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* Area for messages that have been sent */
+#content {
+  padding: var(--content-padding);
+  background-color: #eee;
+  width: calc(100% - 2 * var(--content-padding));
+  height: calc(100% - var(--message-box-height));
+  resize: vertical;
+  overflow-y: scroll;
+}
+
+/* Style for received messages */
+.received {
+  display: table;
+  clear: both;
+  float: left;
+  margin: 6px;
+  padding: 12px;
+  border-radius: 5px;
+  background-color: #fff;
+}
+
+/* Append the sender and timestamp for received messages */
+.received::after {
+  padding-top: 5px;
+  font-size: 0.8em;
+  color: rgba(0, 0, 0, 0.5);
+  display: block;
+  content: attr(data-sender) " - " attr(data-timestamp);
+}
+
+/* Style for sent messages */
+.sent {
+  display: table;
+  clear: both;
+  float: right;
+  margin: 6px;
+  padding: 12px;
+  border-radius: 5px;
+  background-color: #ccc;
+}
+
+/* Append the timestamp for sent messages */
+.sent::after {
+  padding-top: 5px;
+  font-size: 0.8em;
+  color: rgba(0, 0, 0, 0.5);
+  display: block;
+  content: "You - " attr(data-timestamp);
+}
+
+/* Box for composing messages */
+#message {
+  box-shadow: 0 0 25px rgba(0, 0, 0, 0.1);
+  padding: var(--message-box-padding);
+  width: calc(100% - 2 * var(--message-box-padding));
+  flex: 1 1 0;
+}

@@ -56,6 +56,24 @@ class Server {
                     content};
   }
 
+  Response Style(const Request&) {
+    std::ifstream index{"style.css"};
+    std::string content{std::istreambuf_iterator<char>{index}, {}};
+    return Response{Response::HttpStatus::kOk,
+                    {{"Content-Type", "text/css; charset=utf-8"}},
+                    content};
+  }
+
+  Response Script(const Request&) {
+    std::ifstream index{"script.js"};
+    std::string content{std::istreambuf_iterator<char>{index}, {}};
+    return Response{Response::HttpStatus::kOk,
+                    {{"Content-Type",
+                      "application/x-javascript; charset=utf-8"}},
+                    content};
+  }
+
+
   void HandleConnection(tcp::Stream stream) {
     std::string input_string;
     while (true) {
@@ -73,13 +91,29 @@ class Server {
       }
     }
 
-    std::istringstream input{input_string};
+    std::istringstream input{input_string.substr(0, input_string.length() - 4)};
     Request request;
     input >> request;
     if (input.fail()) {
-      std::cout << "input was not so great\n";
+      std::cerr << "input was not so great\n";
       return;
     }
+
+    auto i = request.headers.find("content-length");
+    if (i != request.headers.end()) {
+      int message_length = -1;
+      try {
+        message_length = std::stoi(i->second);
+      } catch (...) {}
+      if (message_length > 0 && message_length < 9001) {
+        request.body = stream.Read(message_length);
+        std::cout << request.body << "\n";
+      } else if (message_length != 0) {
+        std::cerr << "content length was not so great\n";
+        return;
+      }
+    }
+
 
     std::ostringstream output;
     output << GenerateResponse(request);
@@ -106,7 +140,9 @@ class Server {
   std::map<std::string, int> counters_;
   std::map<std::string, Handler> path_map_ = {
       {"/", &Server::IndexPage},
-      {"/message", &Server::HandleMessage}
+      {"/message", &Server::HandleMessage},
+      {"/script.js", &Server::Script},
+      {"/style.css", &Server::Style}
   };
 };
 
